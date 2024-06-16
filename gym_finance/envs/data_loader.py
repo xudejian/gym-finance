@@ -2,10 +2,10 @@ import os
 import pandas as pd
 try:
     from google.colab import drive
-    base_dir = os.path.expanduser("~/.cache/finance")
-    drive.mount(base_dir)
+    drive.mount('/content/drive')
+    COLAB=True
 except:
-    pass
+    COLAB=False
 
 
 def filter_and(base, f):
@@ -14,7 +14,10 @@ def filter_and(base, f):
     return base & f
 
 def csv_loader(name, index_name, from_date=None, to_date=None):
-    base_dir = os.path.expanduser("~/.cache/finance")
+    if COLAB:
+        base_dir = '/content/drive/MyDrive/colab/finance'
+    else:
+        base_dir = os.path.expanduser("~/.cache/finance")
     path = os.path.join(base_dir, name + '.csv')
     df = pd.read_csv(path, parse_dates=True, index_col=index_name)
     # df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
