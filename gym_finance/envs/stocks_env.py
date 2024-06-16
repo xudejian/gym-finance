@@ -72,6 +72,8 @@ class StocksEnv(TradingEnv):
 
     def _update_position(self, action):
         current_price = self.prices[self._current_tick]
+        if current_price < 0.01:
+            return
         shares = self._position[0]
         cost = self._position[1]
         balance = self._position[2]
@@ -80,9 +82,11 @@ class StocksEnv(TradingEnv):
         if new_shares < shares:
             self._position = [
                     new_shares,
-                    cost*(shares-new_shares)/shares,
+                    cost*new_shares/shares,
                     balance + (shares-new_shares)*current_price]
         elif new_shares > shares:
+            if shares == 0:
+                self.first_buy = current_price
             self._position = [
                     new_shares,
                     cost + (new_shares-shares)*current_price,

@@ -17,11 +17,11 @@ class TradingEnv(gym.Env):
 
     metadata = {
             'render_modes': ['human'],
-            'render_fps': 20,
+            'render_fps': 60,
             }
 
-    def __init__(self, balance=10000, window_size=1, dataset_loader=None, targets=[],
-                 watches=[], from_date=None, to_date=None, epoch_size=520, render_mode=None):
+    def __init__(self, balance=10000, window_size=5, dataset_loader=None, targets=[],
+                 watches=[], from_date=None, to_date=None, epoch_size=20, render_mode=None):
         assert render_mode is None or render_mode in self.metadata['render_modes']
         self.render_mode = render_mode
 
@@ -43,8 +43,8 @@ class TradingEnv(gym.Env):
 
         # episode
         self._epoch_size = epoch_size
-        self._start_tick = 0 # self.window_size
-        self._end_tick = min(len(self.prices) - 1, self._start_tick + epoch_size)
+        self._start_tick = None
+        self._end_tick = None
         self._terminated = None
         self._truncated = None
         self._current_tick = None
@@ -52,6 +52,7 @@ class TradingEnv(gym.Env):
         self._position = [0,0,balance]
         self._position_history = None
         self._total_reward = None
+        self.first_buy = None
 
         self.screen_width = 800
         self.screen_height = 600
@@ -65,8 +66,9 @@ class TradingEnv(gym.Env):
 
         self._terminated = False
         self._truncated = False
-        self._start_tick = int(self.np_random.uniform(0, max(0, len(self.prices) - 1 - self._epoch_size)))
-        self._end_tick = min(len(self.prices) - 1, self._start_tick + self._epoch_size)
+        self._start_tick = self.np_random.integers(
+                self.window_size, max(self.window_size, len(self.prices) - self._epoch_size))
+        self._end_tick = min(self._start_tick + self._epoch_size, len(self.prices)-1)
         self._current_tick = self._start_tick
         self._position = [0, 0, self._initial_balance]
         self._position_history = [0] * len(self.prices)
@@ -82,28 +84,40 @@ class TradingEnv(gym.Env):
         self._truncated = False
         self._current_tick += 1
 
-        if self._current_tick == self._end_tick:
-            self._terminated = True
-
         reward = self._calculate_reward(action)
         self._total_reward += reward
 
+        if self._current_tick == self._end_tick:
+            self._terminated = True
+        if self._position[0] > 0 and action == 0:
+            self._terminated = True
+
         self._update_position(action)
         self._position_history[self._current_tick] = action
+        # print(self._current_tick, action)
         observation = self._get_observation()
         info = self._get_info()
 
         return observation, reward, self._terminated, self._truncated, info
 
     def _get_info(self):
-        return dict(
+        info = dict(
             total_reward=self._total_reward,
             total_profit=self._total_profit(),
-            position=self._position
+            position=self._position,
+            first_buy=self.first_buy,
         )
+        return info
 
     def _get_observation(self):
-        return self.signal_features[(self._current_tick-self.window_size+1):self._current_tick+1]
+        if self._current_tick >= self.window_size:
+            return self.signal_features[(self._current_tick-self.window_size+1):self._current_tick+1]
+        else:
+            output = self.signal_features[:self._current_tick+1]
+            input_rows, input_cols = output.shape
+            padding = np.zeros(
+                    (self.window_size - input_rows, input_cols), dtype=np.float32)
+            return np.vstack((padding, output))
 
     def render(self):
         if self.render_mode is None:
@@ -146,7 +160,7 @@ class TradingEnv(gym.Env):
         start_index = max(0, end_index-self.screen_width*9 //
                           (candle_width + 2)//10)
         HH, LL = 0, 1e10
-        for i in range(max(0, end_index-260), end_index):
+        for i in range(max(0, end_index-self._epoch_size*3), end_index):
             _, H, L, _, _, _ = self.signal_features[i][0]
             HH = max(HH, H)
             LL = min(LL, L)
@@ -168,8 +182,13 @@ class TradingEnv(gym.Env):
                 pygame.draw.line(surf, BLACK, (prev, pv), (x, v), 1)
             prev = x
             pv = v
-        text = self.font.render(f'Profit: {int(self._total_profit())}', True, BLACK)
-        surf.blit(text, (0,0))
+        if self.first_buy:
+            current_price = self.prices[self._current_tick]
+            base_profit = int((current_price - self.first_buy) * 100 / self.first_buy)
+            profit = int(self._total_profit() * 100 / self._initial_balance)
+            msg = f'Profit: {profit}% / {base_profit}%'
+            text = self.font.render(msg, True, BLACK)
+            surf.blit(text, (0,0))
         text = self.font.render(f'Reward: {int(self._total_reward)}', True, BLACK)
         surf.blit(text, (0,20))
         self.screen.blit(surf, (5, 5))

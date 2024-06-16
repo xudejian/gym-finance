@@ -1,5 +1,11 @@
 import os
 import pandas as pd
+try:
+    from google.colab import drive
+    base_dir = os.path.expanduser("~/.cache/finance")
+    drive.mount(base_dir)
+except:
+    pass
 
 
 def filter_and(base, f):
@@ -14,9 +20,9 @@ def csv_loader(name, index_name, from_date=None, to_date=None):
     # df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
     filter_ = None
     if from_date:
-        filter_ = filter_and(filter_, (df['Date'] >= from_date))
+        filter_ = filter_and(filter_, (df.index >= from_date))
     if to_date:
-        filter_ = filter_and(filter_, (df['Date'] < to_date))
-    if filter_:
+        filter_ = filter_and(filter_, (df.index < to_date))
+    if filter_ is not None:
         return df.loc[filter_]
     return df
