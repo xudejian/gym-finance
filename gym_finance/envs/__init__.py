@@ -1,2 +1,3 @@
-from .trading_env import TradingEnv
-from .stocks_env import StocksEnv
+from .trading_env import TradingEnvGym
+from .stocks_env import StocksEnvGym
+from .data_loader import load_stock_data

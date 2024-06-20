@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 
 
@@ -23,3 +24,56 @@ def csv_loader(name, index_name, from_date=None, to_date=None):
     if filter_ is not None:
         return df.loc[filter_]
     return df
+
+
+def load_stock_data(targets=[], watches=[], from_date=None, to_date=None):
+    datasets_targets = [csv_loader(i, "Date", from_date, to_date) for i in targets]
+    datasets_watches = [csv_loader(i, "Date", from_date, to_date) for i in watches]
+
+    df = datasets_targets[0]
+    prices = df.loc[:, 'Open'].to_numpy()
+    if len(datasets_targets) + len(datasets_watches) < 2:
+        # signal_features = np.array([df.values.tolist()])
+        # return prices.astype(np.float32), signal_features.astype(np.float32)
+        pass
+
+    all_dates = df.index
+    for i in range(len(datasets_targets)):
+        df1 = datasets_targets[i]
+        df1 = df1[(df1.index >= df.index.min()) & (df1.index <= df.index.max())]
+        all_dates = all_dates.union(df1.index)
+        datasets_targets[i] = df1
+    for i in range(len(datasets_watches)):
+        df1 = datasets_watches[i]
+        df1 = df1[(df1.index >= df.index.min()) & (df1.index <= df.index.max())]
+        all_dates = all_dates.union(df1.index)
+        datasets_watches[i] = df1
+
+    dfs = []
+    keys = []
+    for i in range(len(datasets_targets)):
+        df1 = datasets_targets[i]
+        df1 = df1.reindex(all_dates)
+        df1.fillna(0, inplace=True)
+        dfs.append(df1)
+        keys.append("t{}".format(i))
+    for i in range(len(datasets_watches)):
+        df1 = datasets_watches[i]
+        df1 = df1.reindex(all_dates)
+        df1.fillna(0, inplace=True)
+        dfs.append(df1)
+        keys.append("w{}".format(i))
+    combined = pd.concat(dfs, axis=1, keys=keys)
+    # Flatten the MultiIndex columns
+    combined.columns = [f'{file}_{col}' for file, col in combined.columns]
+    # Combine the columns into nested lists for each row
+    combined = combined.apply(
+            lambda row: [row[col:col+len(df.columns)].tolist() for col in range(0, len(row), len(df.columns))],
+            axis=1)
+    # Reset index to bring Date back as a column
+    # combined = combined.reset_index()
+
+    # Rename the columns
+    # combined.columns = ['Date', 'Values']
+    signal_features = np.array(combined.values.tolist())
+    return prices.astype(np.float32), signal_features.astype(np.float32)

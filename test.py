@@ -1,13 +1,15 @@
 import gymnasium as gym
 import gym_finance
-import time
+import gym_finance.envs
 
 
+prices, data = gym_finance.envs.load_stock_data(
+        from_date="2001-01-01", to_date="2020-01-01",
+        targets=["GOOGL"])
 env = gym.make('stocks-v0',
-               balance=10000,
-               from_date="2001-01-01",
-               to_date="2020-01-01",
-               targets=["GOOGL"], watches=['^IXIC'],
+               prices=prices,
+               data=data,
+               epoch_size=2000,
                render_mode='human')
 
 print(env.action_space)
@@ -15,6 +17,7 @@ print(env.observation_space)
 observation, info = env.reset()
 while True:
     action = env.action_space.sample()
+    print(action)
     observation, reward, terminated, truncated, info = env.step(action)
     done = terminated or truncated
 

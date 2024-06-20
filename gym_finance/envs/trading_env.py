@@ -2,8 +2,6 @@ import gymnasium as gym
 from gymnasium.error import DependencyNotInstalled
 import numpy as np
 
-from .data_loader import csv_loader
-
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -13,32 +11,27 @@ RED = (255, 0, 0)  # Down (close < open)
 candle_width = 5  # Width of each candlestick
 
 
-class TradingEnv(gym.Env):
+class TradingEnvGym(gym.Env):
 
     metadata = {
             'render_modes': ['human'],
             'render_fps': 60,
             }
 
-    def __init__(self, balance=10000, window_size=5, dataset_loader=None, targets=[],
-                 watches=[], from_date=None, to_date=None, epoch_size=20, render_mode=None):
+    def __init__(self, prices, data, window_size=5, epoch_size=20, render_mode=None):
         assert render_mode is None or render_mode in self.metadata['render_modes']
         self.render_mode = render_mode
-
-        if dataset_loader is None:
-            dataset_loader = csv_loader
-        datasets_targets = [dataset_loader(i, "Date", from_date, to_date) for i in targets]
-        datasets_watches = [dataset_loader(i, "Date", from_date, to_date) for i in watches]
-
+        balance= 100000
         self.window_size = window_size
-        self.prices, self.signal_features = self._process_data(datasets_targets, datasets_watches)
+        self.prices = prices
+        self.signal_features = data
 
         # spaces
-        self.action_space = gym.spaces.Discrete(100)
+        self.action_space = gym.spaces.Discrete(3, seed=42)
         INF = 1e10
         shape = (window_size,) + self.signal_features.shape[1:]
         self.observation_space = gym.spaces.Box(
-            low=-INF, high=INF, shape=shape, dtype=np.float32,
+            low=0, high=INF, shape=shape, dtype=np.float32,
         )
 
         # episode
@@ -46,12 +39,11 @@ class TradingEnv(gym.Env):
         self._start_tick = None
         self._end_tick = None
         self._terminated = None
-        self._truncated = None
         self._current_tick = None
         self._initial_balance = balance
         self._position = [0,0,balance]
         self._position_history = None
-        self._total_reward = None
+        self._total_reward = 0
         self.first_buy = None
 
         self.screen_width = 800
@@ -65,14 +57,13 @@ class TradingEnv(gym.Env):
         self.action_space.seed(int((self.np_random.uniform(0, seed if seed is not None else 1))))
 
         self._terminated = False
-        self._truncated = False
         self._start_tick = self.np_random.integers(
                 self.window_size, max(self.window_size, len(self.prices) - self._epoch_size))
         self._end_tick = min(self._start_tick + self._epoch_size, len(self.prices)-1)
         self._current_tick = self._start_tick
         self._position = [0, 0, self._initial_balance]
         self._position_history = [0] * len(self.prices)
-        self._total_reward = 0.
+        self._total_reward = 0
 
         observation = self._get_observation()
         info = self._get_info()
@@ -80,25 +71,21 @@ class TradingEnv(gym.Env):
         return observation, info
 
     def step(self, action):
-        self._terminated = False
-        self._truncated = False
-        self._current_tick += 1
-
         reward = self._calculate_reward(action)
         self._total_reward += reward
+        self._position_history[self._current_tick] = action
+        self._update_position(action)
+        # print(self._current_tick, action)
 
+        self._terminated = False
+        self._current_tick += 1
         if self._current_tick == self._end_tick:
             self._terminated = True
-        if self._position[0] > 0 and action == 0:
-            self._terminated = True
 
-        self._update_position(action)
-        self._position_history[self._current_tick] = action
-        # print(self._current_tick, action)
         observation = self._get_observation()
         info = self._get_info()
 
-        return observation, reward, self._terminated, self._truncated, info
+        return observation, reward, self._terminated, False, info
 
     def _get_info(self):
         info = dict(
@@ -184,9 +171,14 @@ class TradingEnv(gym.Env):
             pv = v
         if self.first_buy:
             current_price = self.prices[self._current_tick]
+            base0_price = self.prices[self._start_tick]
+            if base0_price <= 0.01:
+                base0_profit = 0
+            else:
+                base0_profit = int((current_price - base0_price) * 100 / base0_price)
             base_profit = int((current_price - self.first_buy) * 100 / self.first_buy)
             profit = int(self._total_profit() * 100 / self._initial_balance)
-            msg = f'Profit: {profit}% / {base_profit}%'
+            msg = f'Profit: {profit}% / {base_profit}%  / {base0_profit}%'
             text = self.font.render(msg, True, BLACK)
             surf.blit(text, (0,0))
         text = self.font.render(f'Reward: {int(self._total_reward)}', True, BLACK)
