@@ -18,7 +18,7 @@ class TradingEnvGym(gym.Env):
             'render_fps': 60,
             }
 
-    def __init__(self, prices, data, window_size=5, epoch_size=20, render_mode=None):
+    def __init__(self, prices, data, window_size=5, epoch_size=60, render_mode=None):
         assert render_mode is None or render_mode in self.metadata['render_modes']
         self.render_mode = render_mode
         balance= 100000
@@ -31,14 +31,13 @@ class TradingEnvGym(gym.Env):
         INF = 1e10
         shape = (window_size,) + self.signal_features.shape[1:]
         self.observation_space = gym.spaces.Box(
-            low=0, high=INF, shape=shape, dtype=np.float32,
+            low=0., high=INF, shape=shape, dtype=np.float32,
         )
 
         # episode
         self._epoch_size = epoch_size
         self._start_tick = None
         self._end_tick = None
-        self._terminated = None
         self._current_tick = None
         self._initial_balance = balance
         self._position = [0,0,balance]
@@ -54,9 +53,8 @@ class TradingEnvGym(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
-        self.action_space.seed(int((self.np_random.uniform(0, seed if seed is not None else 1))))
+        self.action_space.seed(int(self.np_random.uniform(0, seed if seed is not None else 1)))
 
-        self._terminated = False
         self._start_tick = self.np_random.integers(
                 self.window_size, max(self.window_size, len(self.prices) - self._epoch_size))
         self._end_tick = min(self._start_tick + self._epoch_size, len(self.prices)-1)
@@ -77,15 +75,16 @@ class TradingEnvGym(gym.Env):
         self._update_position(action)
         # print(self._current_tick, action)
 
-        self._terminated = False
+        terminated = False
         self._current_tick += 1
-        if self._current_tick == self._end_tick:
-            self._terminated = True
+        if self._current_tick >= self._end_tick:
+            self._current_tick = self._end_tick
+            terminated = True
 
         observation = self._get_observation()
         info = self._get_info()
 
-        return observation, reward, self._terminated, False, info
+        return observation, reward, terminated, False, info
 
     def _get_info(self):
         info = dict(
@@ -147,7 +146,7 @@ class TradingEnvGym(gym.Env):
         start_index = max(0, end_index-self.screen_width*9 //
                           (candle_width + 2)//10)
         HH, LL = 0, 1e10
-        for i in range(max(0, end_index-self._epoch_size*3), end_index):
+        for i in range(max(0, end_index-self._epoch_size*2), end_index):
             _, H, L, _, _, _ = self.signal_features[i][0]
             HH = max(HH, H)
             LL = min(LL, L)

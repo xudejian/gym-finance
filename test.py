@@ -18,8 +18,7 @@ observation, info = env.reset()
 while True:
     action = env.action_space.sample()
     print(action)
-    observation, reward, terminated, truncated, info = env.step(action)
-    done = terminated or truncated
+    observation, reward, done, _, info = env.step(action)
 
     env.render()
     if done:
